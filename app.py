@@ -17,11 +17,10 @@ st.set_page_config(
 
 # --- URLs para os arquivos no Hugging Face ---
 # !!! IMPORTANTE: Substitua pelas suas URLs !!!
-# Vá no seu repositório no Hugging Face, clique em cada arquivo,
-# clique com o botão direito no botão "Download" e "Copiar endereço do link".
+# CORREÇÃO: As URLs de VAGAS e PROSPECTS foram trocadas para os links corretos.
 APPLICANTS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/applicants.json"
-VAGAS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/prospects.json"
-PROSPECTS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/vagas.json"
+VAGAS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/vagas.json"
+PROSPECTS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/prospects.json"
 
 
 # --- Função para baixar os arquivos ---
@@ -59,7 +58,7 @@ with st.sidebar:
     st.info("Este é um MVP. Os arquivos de dados serão baixados do Hugging Face.")
 
 # --- Download dos Dados ---
-# Garante que todos os arquivos JSON estão disponíveis antes de rodar o resto do app.
+# CORREÇÃO: A ordem de download agora corresponde aos nomes corretos dos arquivos.
 baixar_arquivo_se_nao_existir(VAGAS_JSON_URL, "vagas.json")
 baixar_arquivo_se_nao_existir(PROSPECTS_JSON_URL, "prospects.json")
 baixar_arquivo_se_nao_existir(APPLICANTS_JSON_URL, "applicants.json")
@@ -318,4 +317,3 @@ with tab3:
                         st.markdown(analise_final)
             else:
                 st.info("Você precisa finalizar pelo menos duas entrevistas para gerar uma análise comparativa.")
-
