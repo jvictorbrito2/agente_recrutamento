@@ -20,28 +20,66 @@ st.set_page_config(
 APPLICANTS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/applicants.json"
 VAGAS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/vagas.json"
 PROSPECTS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/prospects.json"
+NDJSON_FILENAME = "applicants_nd.json"
 
 
-# --- Função para baixar os arquivos ---
-def baixar_arquivo_se_nao_existir(url, nome_arquivo):
-    """Baixa um arquivo de uma URL se ele não existir localmente."""
-    if not os.path.exists(nome_arquivo):
-        st.info(f"Arquivo de dados '{nome_arquivo}' não encontrado. Baixando do repositório...")
+# --- Funções de Preparação de Dados ---
+def preparar_dados_candidatos(url, original_filename, ndjson_filename):
+    """
+    Garante que o arquivo de dados dos candidatos esteja disponível no formato otimizado (NDJSON).
+    Se o arquivo otimizado não existir, baixa o original e o converte.
+    """
+    if os.path.exists(ndjson_filename):
+        return True
+
+    # Baixa o arquivo original se ele também não existir
+    if not os.path.exists(original_filename):
+        st.info(f"Arquivo de dados '{original_filename}' não encontrado. Baixando do repositório...")
         try:
-            with st.spinner(f"Baixando {nome_arquivo}... (Isso pode levar alguns minutos na primeira vez)"):
+            with st.spinner(f"Baixando {original_filename}... (Isso pode levar alguns minutos na primeira vez)"):
                 response = requests.get(url, stream=True)
                 response.raise_for_status()
-                
-                with open(nome_arquivo, 'wb') as f:
+                with open(original_filename, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
-            
-            st.success(f"Arquivo '{nome_arquivo}' baixado com sucesso!")
-            time.sleep(1) # Pausa para o usuário ver a mensagem
+            st.success(f"Arquivo '{original_filename}' baixado com sucesso!")
         except requests.exceptions.RequestException as e:
-            st.error(f"Erro ao baixar o arquivo '{nome_arquivo}': {e}. Verifique a URL.")
+            st.error(f"Erro ao baixar o arquivo '{original_filename}': {e}. Verifique a URL.")
             st.stop()
-    return True
+
+    # Converte o JSON original para NDJSON
+    st.info(f"Primeiro uso: Convertendo '{original_filename}' para um formato otimizado...")
+    with st.spinner("Isso pode levar um momento, mas só acontecerá uma vez."):
+        try:
+            with open(original_filename, 'r', encoding='utf-8') as f_in:
+                data = json.load(f_in)
+            
+            with open(ndjson_filename, 'w', encoding='utf-8') as f_out:
+                for codigo, candidato_data in data.items():
+                    # Adiciona o código do candidato dentro do próprio objeto
+                    candidato_data['codigo_candidato'] = codigo
+                    json.dump(candidato_data, f_out)
+                    f_out.write('\n')
+            st.success("Arquivo de dados otimizado com sucesso!")
+            time.sleep(2)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Falha ao converter o arquivo JSON: {e}")
+            st.stop()
+
+def baixar_arquivo_se_nao_existir(url, nome_arquivo):
+    """Baixa arquivos JSON menores se não existirem."""
+    if not os.path.exists(nome_arquivo):
+        st.info(f"Baixando arquivo de configuração '{nome_arquivo}'...")
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            with open(nome_arquivo, 'wb') as f:
+                f.write(response.content)
+            st.success(f"'{nome_arquivo}' baixado.")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Erro ao baixar '{nome_arquivo}': {e}.")
+            st.stop()
 
 # --- Configuração da API do Gemini ---
 with st.sidebar:
@@ -56,10 +94,10 @@ with st.sidebar:
     st.markdown("---")
     st.info("Este é um MVP. Os arquivos de dados serão baixados do Hugging Face.")
 
-# --- Download dos Dados ---
+# --- Download e Preparação dos Dados ---
 baixar_arquivo_se_nao_existir(VAGAS_JSON_URL, "vagas.json")
 baixar_arquivo_se_nao_existir(PROSPECTS_JSON_URL, "prospects.json")
-baixar_arquivo_se_nao_existir(APPLICANTS_JSON_URL, "applicants.json")
+preparar_dados_candidatos(APPLICANTS_JSON_URL, "applicants.json", NDJSON_FILENAME)
 
 
 # --- Funções de Carregamento de Dados ---
@@ -87,6 +125,7 @@ def buscar_detalhes_candidato(codigos_candidatos):
     if not codigos_candidatos:
         return pd.DataFrame()
     codigos_str = ", ".join([f"'{c}'" for c in codigos_candidatos])
+    # CORREÇÃO: A consulta agora usa o arquivo NDJSON otimizado.
     query = f"""
     SELECT 
         codigo_candidato,
@@ -95,16 +134,14 @@ def buscar_detalhes_candidato(codigos_candidatos):
         informacoes_academicas ->> 'nivel_ingles' AS nivel_ingles,
         informacoes_profissionais ->> 'nivel_profissional' as nivel_profissional,
         cv
-    FROM read_json_auto('applicants.json')
+    FROM read_json_auto('{NDJSON_FILENAME}')
     WHERE codigo_candidato IN ({codigos_str})
     """
     try:
         with duckdb.connect(database=':memory:', read_only=False) as con:
-            # CORREÇÃO FINAL: Aumenta o limite de tamanho do objeto JSON para 250MB.
-            con.execute("SET maximum_object_size = 262144000")
             return con.execute(query).fetchdf()
     except Exception as e:
-        st.error(f"Erro ao consultar applicants.json com DuckDB: {e}")
+        st.error(f"Erro ao consultar o arquivo de candidatos com DuckDB: {e}")
         return pd.DataFrame()
 
 # --- Funções do Agente 1 (Matching Híbrido) ---
@@ -317,3 +354,4 @@ with tab3:
                         st.markdown(analise_final)
             else:
                 st.info("Você precisa finalizar pelo menos duas entrevistas para gerar uma análise comparativa.")
+
