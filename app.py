@@ -125,13 +125,13 @@ def buscar_detalhes_candidato(codigos_candidatos):
     if not codigos_candidatos:
         return pd.DataFrame()
     codigos_str = ", ".join([f"'{c}'" for c in codigos_candidatos])
-    # CORREÇÃO: A consulta agora usa o arquivo NDJSON otimizado.
+    # CORREÇÃO: Acessa 'nivel_ingles' dentro da coluna correta 'formacao_e_idiomas'.
     query = f"""
     SELECT 
         codigo_candidato,
         informacoes_profissionais ->> 'conhecimentos' AS conhecimentos,
         informacoes_profissionais ->> 'area_de_atuacao' AS area_atuacao,
-        informacoes_academicas ->> 'nivel_ingles' AS nivel_ingles,
+        formacao_e_idiomas ->> 'nivel_ingles' AS nivel_ingles,
         informacoes_profissionais ->> 'nivel_profissional' as nivel_profissional,
         cv
     FROM read_json_auto('{NDJSON_FILENAME}')
@@ -354,4 +354,5 @@ with tab3:
                         st.markdown(analise_final)
             else:
                 st.info("Você precisa finalizar pelo menos duas entrevistas para gerar uma análise comparativa.")
+
 
