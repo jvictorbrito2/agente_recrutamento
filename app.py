@@ -229,7 +229,6 @@ if 'candidatos_para_entrevista' not in st.session_state: st.session_state.candid
 if 'vaga_selecionada' not in st.session_state: st.session_state.vaga_selecionada = {}
 if "messages" not in st.session_state: st.session_state.messages = {}
 if "relatorios_finais" not in st.session_state: st.session_state.relatorios_finais = {}
-# CORREÇÃO: Adiciona estados para gerenciar a exibição dos resultados da análise
 if 'analise_vaga_id' not in st.session_state: st.session_state.analise_vaga_id = None
 if 'df_analise_resultado' not in st.session_state: st.session_state.df_analise_resultado = None
 
@@ -253,7 +252,6 @@ with tab1:
             opcoes_vagas = {row['codigo_vaga']: f"{row['titulo_vaga']} (Cliente: {row['cliente']})" for index, row in df_vagas_filtrado.iterrows()}
             codigo_vaga_selecionada = st.selectbox("Selecione a vaga:", options=list(opcoes_vagas.keys()), format_func=lambda x: opcoes_vagas[x], key="select_vaga")
 
-            # CORREÇÃO: Limpa os resultados da análise anterior se uma nova vaga for selecionada
             if st.session_state.analise_vaga_id != codigo_vaga_selecionada:
                 st.session_state.df_analise_resultado = None
                 st.session_state.analise_vaga_id = codigo_vaga_selecionada
@@ -282,7 +280,6 @@ with tab1:
                                     df_resultado['texto_completo'] = df_resultado['conhecimentos'] + " " + df_resultado['cv']
                                     df_resultado['score'] = df_resultado['texto_completo'].apply(lambda x: calcular_score_hibrido(x, competencias_analisadas))
                                     df_resultado = df_resultado.sort_values(by='score', ascending=False).head(10)
-                                    # CORREÇÃO: Salva o resultado da análise no session_state para persistir
                                     st.session_state.df_analise_resultado = df_resultado
                                 else:
                                     st.error("Não foi possível buscar detalhes dos candidatos.")
@@ -291,7 +288,6 @@ with tab1:
                     else:
                         st.error("Não foi possível analisar as competências da vaga. Verifique a API Key e a descrição da vaga.")
 
-                # CORREÇÃO: Exibe a tabela de resultados se ela existir no session_state
                 if st.session_state.df_analise_resultado is not None and not st.session_state.df_analise_resultado.empty:
                     st.subheader("Top 10 Candidatos Recomendados")
                     df_para_editar = st.session_state.df_analise_resultado.copy()
@@ -302,19 +298,18 @@ with tab1:
                         column_config={"selecionar": st.column_config.CheckboxColumn("Selecionar para Entrevista", default=False)},
                         hide_index=True,
                         use_container_width=True,
-                        key=f"editor_{st.session_state.analise_vaga_id}" # Chave dinâmica para evitar conflitos
+                        key=f"editor_{st.session_state.analise_vaga_id}"
                     )
                     
                     if st.button("Confirmar Seleção para Entrevista"):
                         candidatos_selecionados = df_editado[df_editado['selecionar']]
                         if not candidatos_selecionados.empty:
-                            # Mescla com os dados originais para obter todas as colunas
                             df_selecionados_completo = pd.merge(candidatos_selecionados, st.session_state.df_analise_resultado, on=['nome', 'score', 'conhecimentos'])
                             
                             st.session_state.candidatos_para_entrevista = df_selecionados_completo.to_dict('records')
                             st.session_state.vaga_selecionada = vaga_selecionada_data.to_dict()
                             st.session_state.relatorios_finais[codigo_vaga_selecionada] = {}
-                            st.session_state.df_analise_resultado = None # Limpa a tabela da tela
+                            st.session_state.df_analise_resultado = None
                             
                             st.success(f"{len(candidatos_selecionados)} candidato(s) movido(s) para a aba de entrevistas!")
                             time.sleep(2)
@@ -343,7 +338,24 @@ with tab2:
             st.session_state.messages[id_candidato].append({"role": "user", "content": prompt})
             with st.spinner("Agente 2 está pensando..."):
                 historico_formatado = "\n".join([f"{'Recrutador' if m['role'] == 'user' else 'IA'}: {m['content']}" for m in st.session_state.messages[id_candidato]])
-                prompt_ia = f"Continue a entrevista de forma natural, com base no histórico. Faça a próxima pergunta para avaliar o candidato para a vaga de {vaga_atual['titulo_vaga']}.\nHistórico:\n{historico_formatado}\n\nSua próxima pergunta:"
+                # CORREÇÃO: Adiciona o contexto do candidato ao prompt da entrevista.
+                prompt_ia = f"""
+                Você é um entrevistador de IA da Decision. Continue a entrevista abaixo.
+                Seu objetivo é avaliar o candidato nos 3 pilares: técnico, cultural e de engajamento para a vaga.
+                Faça a próxima pergunta de forma natural e específica. Não se repita.
+                Se for a primeira pergunta, use uma informação do CV do candidato para iniciar a conversa.
+
+                **Vaga:** {vaga_atual['titulo_vaga']}
+                **Competências da Vaga:** {vaga_atual['perfil_vaga'].get('competencia_tecnicas_e_comportamentais')}
+                
+                **Candidato:** {candidato_atual.get('nome')}
+                **Conhecimentos/CV do Candidato:** {candidato_atual.get('conhecimentos')} | {candidato_atual.get('cv')}
+
+                **Histórico da Conversa:**
+                {historico_formatado}
+
+                **Sua próxima pergunta (direcionada e específica para o candidato):**
+                """
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 response = model.generate_content(prompt_ia)
                 st.session_state.messages[id_candidato].append({"role": "assistant", "content": response.text})
