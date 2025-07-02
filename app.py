@@ -125,7 +125,6 @@ def buscar_detalhes_candidato(codigos_candidatos):
     if not codigos_candidatos:
         return pd.DataFrame()
     codigos_str = ", ".join([f"'{c}'" for c in codigos_candidatos])
-    # CORREÇÃO: Concatena as colunas 'cv_pt' e 'cv_en' em uma única coluna chamada 'cv'.
     query = f"""
     SELECT 
         codigo_candidato,
@@ -230,6 +229,10 @@ if 'candidatos_para_entrevista' not in st.session_state: st.session_state.candid
 if 'vaga_selecionada' not in st.session_state: st.session_state.vaga_selecionada = {}
 if "messages" not in st.session_state: st.session_state.messages = {}
 if "relatorios_finais" not in st.session_state: st.session_state.relatorios_finais = {}
+# CORREÇÃO: Adiciona estados para gerenciar a exibição dos resultados da análise
+if 'analise_vaga_id' not in st.session_state: st.session_state.analise_vaga_id = None
+if 'df_analise_resultado' not in st.session_state: st.session_state.df_analise_resultado = None
+
 
 tab1, tab2, tab3 = st.tabs(["Agente 1: Matching Inteligente", "Agente 2: Entrevistas", "Análise Final Comparativa"])
 
@@ -243,24 +246,30 @@ with tab1:
         if termo_busca:
             termo_busca = termo_busca.lower()
             df_vagas_filtrado = df_vagas[df_vagas['titulo_vaga'].str.lower().str.contains(termo_busca) | df_vagas['cliente'].str.lower().str.contains(termo_busca) | df_vagas['codigo_vaga'].str.contains(termo_busca)]
+        
         if df_vagas_filtrado.empty:
             st.warning("Nenhuma vaga encontrada com o termo de busca.")
         else:
             opcoes_vagas = {row['codigo_vaga']: f"{row['titulo_vaga']} (Cliente: {row['cliente']})" for index, row in df_vagas_filtrado.iterrows()}
             codigo_vaga_selecionada = st.selectbox("Selecione a vaga:", options=list(opcoes_vagas.keys()), format_func=lambda x: opcoes_vagas[x], key="select_vaga")
+
+            # CORREÇÃO: Limpa os resultados da análise anterior se uma nova vaga for selecionada
+            if st.session_state.analise_vaga_id != codigo_vaga_selecionada:
+                st.session_state.df_analise_resultado = None
+                st.session_state.analise_vaga_id = codigo_vaga_selecionada
+
             if codigo_vaga_selecionada:
                 vaga_selecionada_data = df_vagas[df_vagas['codigo_vaga'] == codigo_vaga_selecionada].iloc[0]
                 perfil_vaga = vaga_selecionada_data['perfil_vaga']
                 competencias_texto = perfil_vaga.get('competencia_tecnicas_e_comportamentais', 'N/A')
                 with st.expander("Ver detalhes da vaga"):
                     st.write(f"**Competências:** {competencias_texto}")
+                
                 if st.button("Analisar Candidatos com IA", type="primary"):
                     with st.spinner("Agente 1 está analisando as competências da vaga..."):
                         competencias_analisadas = analisar_competencias_vaga(competencias_texto)
                     if competencias_analisadas:
                         st.success("Competências analisadas pela IA!")
-                        with st.expander("Ver competências extraídas pela IA"):
-                            st.json(competencias_analisadas)
                         candidatos_prospect = prospects_data.get(codigo_vaga_selecionada, {}).get('prospects', [])
                         if candidatos_prospect:
                             with st.spinner("Buscando e pontuando candidatos..."):
@@ -273,24 +282,45 @@ with tab1:
                                     df_resultado['texto_completo'] = df_resultado['conhecimentos'] + " " + df_resultado['cv']
                                     df_resultado['score'] = df_resultado['texto_completo'].apply(lambda x: calcular_score_hibrido(x, competencias_analisadas))
                                     df_resultado = df_resultado.sort_values(by='score', ascending=False).head(10)
-                                    st.subheader("Top 10 Candidatos Recomendados")
-                                    df_resultado['selecionar'] = False
-                                    df_editado = st.data_editor(df_resultado[['selecionar', 'nome', 'score', 'conhecimentos']], column_config={"selecionar": st.column_config.CheckboxColumn("Selecionar", default=False)}, hide_index=True, use_container_width=True)
-                                    if st.button("Confirmar Seleção para Entrevista"):
-                                        candidatos_selecionados = df_editado[df_editado['selecionar']]
-                                        if not candidatos_selecionados.empty:
-                                            st.session_state.candidatos_para_entrevista = candidatos_selecionados.to_dict('records')
-                                            st.session_state.vaga_selecionada = vaga_selecionada_data.to_dict()
-                                            st.session_state.relatorios_finais[codigo_vaga_selecionada] = {}
-                                            st.success(f"{len(candidatos_selecionados)} candidato(s) movido(s) para a aba de entrevistas!")
-                                            time.sleep(2)
-                                            st.rerun()
-                                        else:
-                                            st.warning("Nenhum candidato selecionado.")
+                                    # CORREÇÃO: Salva o resultado da análise no session_state para persistir
+                                    st.session_state.df_analise_resultado = df_resultado
+                                else:
+                                    st.error("Não foi possível buscar detalhes dos candidatos.")
                         else:
                             st.warning("Nenhum prospect encontrado para esta vaga.")
                     else:
                         st.error("Não foi possível analisar as competências da vaga. Verifique a API Key e a descrição da vaga.")
+
+                # CORREÇÃO: Exibe a tabela de resultados se ela existir no session_state
+                if st.session_state.df_analise_resultado is not None and not st.session_state.df_analise_resultado.empty:
+                    st.subheader("Top 10 Candidatos Recomendados")
+                    df_para_editar = st.session_state.df_analise_resultado.copy()
+                    df_para_editar['selecionar'] = False
+                    
+                    df_editado = st.data_editor(
+                        df_para_editar[['selecionar', 'nome', 'score', 'conhecimentos']],
+                        column_config={"selecionar": st.column_config.CheckboxColumn("Selecionar para Entrevista", default=False)},
+                        hide_index=True,
+                        use_container_width=True,
+                        key=f"editor_{st.session_state.analise_vaga_id}" # Chave dinâmica para evitar conflitos
+                    )
+                    
+                    if st.button("Confirmar Seleção para Entrevista"):
+                        candidatos_selecionados = df_editado[df_editado['selecionar']]
+                        if not candidatos_selecionados.empty:
+                            # Mescla com os dados originais para obter todas as colunas
+                            df_selecionados_completo = pd.merge(candidatos_selecionados, st.session_state.df_analise_resultado, on=['nome', 'score', 'conhecimentos'])
+                            
+                            st.session_state.candidatos_para_entrevista = df_selecionados_completo.to_dict('records')
+                            st.session_state.vaga_selecionada = vaga_selecionada_data.to_dict()
+                            st.session_state.relatorios_finais[codigo_vaga_selecionada] = {}
+                            st.session_state.df_analise_resultado = None # Limpa a tabela da tela
+                            
+                            st.success(f"{len(candidatos_selecionados)} candidato(s) movido(s) para a aba de entrevistas!")
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.warning("Nenhum candidato selecionado.")
 
 with tab2:
     st.header("Condução das Entrevistas")
