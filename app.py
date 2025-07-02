@@ -17,7 +17,6 @@ st.set_page_config(
 
 # --- URLs para os arquivos no Hugging Face ---
 # !!! IMPORTANTE: Substitua pelas suas URLs !!!
-# CORREÇÃO: As URLs de VAGAS e PROSPECTS foram trocadas para os links corretos.
 APPLICANTS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/applicants.json"
 VAGAS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/vagas.json"
 PROSPECTS_JSON_URL = "https://huggingface.co/datasets/jvictorbrito/agente_recrutamento/resolve/main/prospects.json"
@@ -58,7 +57,6 @@ with st.sidebar:
     st.info("Este é um MVP. Os arquivos de dados serão baixados do Hugging Face.")
 
 # --- Download dos Dados ---
-# CORREÇÃO: A ordem de download agora corresponde aos nomes corretos dos arquivos.
 baixar_arquivo_se_nao_existir(VAGAS_JSON_URL, "vagas.json")
 baixar_arquivo_se_nao_existir(PROSPECTS_JSON_URL, "prospects.json")
 baixar_arquivo_se_nao_existir(APPLICANTS_JSON_URL, "applicants.json")
@@ -102,6 +100,8 @@ def buscar_detalhes_candidato(codigos_candidatos):
     """
     try:
         with duckdb.connect(database=':memory:', read_only=False) as con:
+            # CORREÇÃO FINAL: Aumenta o limite de tamanho do objeto JSON para 250MB.
+            con.execute("SET maximum_object_size = 262144000")
             return con.execute(query).fetchdf()
     except Exception as e:
         st.error(f"Erro ao consultar applicants.json com DuckDB: {e}")
