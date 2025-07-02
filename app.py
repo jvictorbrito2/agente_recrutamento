@@ -125,7 +125,7 @@ def buscar_detalhes_candidato(codigos_candidatos):
     if not codigos_candidatos:
         return pd.DataFrame()
     codigos_str = ", ".join([f"'{c}'" for c in codigos_candidatos])
-    # CORREÇÃO: Acessa 'nivel_ingles' dentro da coluna correta 'formacao_e_idiomas'.
+    # CORREÇÃO: Concatena as colunas 'cv_pt' e 'cv_en' em uma única coluna chamada 'cv'.
     query = f"""
     SELECT 
         codigo_candidato,
@@ -133,7 +133,7 @@ def buscar_detalhes_candidato(codigos_candidatos):
         informacoes_profissionais ->> 'area_de_atuacao' AS area_atuacao,
         formacao_e_idiomas ->> 'nivel_ingles' AS nivel_ingles,
         informacoes_profissionais ->> 'nivel_profissional' as nivel_profissional,
-        cv
+        (cv_pt || ' ' || cv_en) AS cv
     FROM read_json_auto('{NDJSON_FILENAME}')
     WHERE codigo_candidato IN ({codigos_str})
     """
@@ -354,5 +354,3 @@ with tab3:
                         st.markdown(analise_final)
             else:
                 st.info("Você precisa finalizar pelo menos duas entrevistas para gerar uma análise comparativa.")
-
-
