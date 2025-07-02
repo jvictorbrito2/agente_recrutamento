@@ -92,7 +92,8 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Erro ao configurar a API: {e}")
     st.markdown("---")
-    st.info("Este é um MVP. Os arquivos de dados serão baixados do Hugging Face.")
+    # CORREÇÃO: Mensagem da barra lateral simplificada.
+    st.info("Assistente de Recrutamento IA - MVP")
 
 # --- Download e Preparação dos Dados ---
 baixar_arquivo_se_nao_existir(VAGAS_JSON_URL, "vagas.json")
@@ -204,10 +205,21 @@ def gerar_relatorio_final(vaga, candidato, historico_chat):
 
 def gerar_analise_comparativa(vaga, relatorios):
     if not google_api_key: return "Erro: Chave de API do Google não configurada."
+    # CORREÇÃO: O prompt agora instrui a IA a agir como um recrutador da Decision
+    # recomendando um candidato para a empresa CLIENTE.
+    cliente = vaga.get('cliente', 'empresa contratante')
     prompt = f"""
-    Você é o Diretor de Recrutamento da Decision. Analise os relatórios dos finalistas para a vaga de {vaga.get('titulo_vaga', 'N/A')} e eleja o(s) candidato(s) perfeito(s).
-    **Relatórios:**\n{relatorios}
-    **Sua Tarefa:** Crie um ranking e um parecer final justificando sua escolha.
+    Você é um Diretor de Recrutamento da **Decision**. Sua tarefa é criar um parecer final para apresentar ao seu cliente, a empresa **'{cliente}'**.
+    Analise os relatórios de entrevista dos finalistas para a vaga de **{vaga.get('titulo_vaga', 'N/A')}**.
+
+    **Relatórios dos Finalistas:**
+    ---
+    {relatorios}
+    ---
+
+    **Sua Tarefa:**
+    1.  Crie um ranking dos candidatos, do mais recomendado para o menos.
+    2.  Escreva um parecer final direcionado ao cliente ('{cliente}'), justificando por que você, como representante da Decision, recomenda a contratação do candidato ideal para a vaga deles. Enfatize como as habilidades e o perfil do candidato escolhido beneficiarão o cliente.
     """
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
@@ -228,6 +240,7 @@ prospects_data = carregar_prospects()
 if 'candidatos_para_entrevista' not in st.session_state: st.session_state.candidatos_para_entrevista = []
 if 'vaga_selecionada' not in st.session_state: st.session_state.vaga_selecionada = {}
 if "messages" not in st.session_state: st.session_state.messages = {}
+if "question_count" not in st.session_state: st.session_state.question_count = {}
 if "relatorios_finais" not in st.session_state: st.session_state.relatorios_finais = {}
 if 'analise_vaga_id' not in st.session_state: st.session_state.analise_vaga_id = None
 if 'df_analise_resultado' not in st.session_state: st.session_state.df_analise_resultado = None
@@ -327,26 +340,32 @@ with tab2:
         nomes_candidatos = {c['codigo_candidato']: c['nome'] for c in st.session_state.candidatos_para_entrevista}
         id_candidato = st.selectbox("Selecione o candidato para entrevistar:", options=list(nomes_candidatos.keys()), format_func=lambda x: nomes_candidatos[x])
         candidato_atual = [c for c in st.session_state.candidatos_para_entrevista if c['codigo_candidato'] == id_candidato][0]
+        
         if id_candidato not in st.session_state.messages:
-            st.session_state.messages[id_candidato] = [{"role": "assistant", "content": f"Olá! Sou o assistente de IA. Pronto para iniciar a entrevista com **{candidato_atual['nome']}**."}]
+            st.session_state.messages[id_candidato] = [{"role": "assistant", "content": f"Olá! Sou o assistente de IA. Pronto para iniciar a entrevista com **{candidato_atual['nome']}**. Para começar, pode me dizer 'Olá' ou 'Podemos começar'."}]
+            st.session_state.question_count[id_candidato] = 0
+
         chat_container = st.container(height=400)
         for message in st.session_state.messages[id_candidato]:
             with chat_container:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
+
         if prompt := st.chat_input("Digite a resposta do candidato..."):
             st.session_state.messages[id_candidato].append({"role": "user", "content": prompt})
             with st.spinner("Agente 2 está pensando..."):
-                historico_formatado = "\n".join([f"{'Recrutador' if m['role'] == 'user' else 'IA'}: {m['content']}" for m in st.session_state.messages[id_candidato]])
-                # CORREÇÃO: Adiciona regras claras para a duração da entrevista.
+                historico_formatado = "\n".join([f"{'Recrutador (resposta do candidato)' if m['role'] == 'user' else 'IA (sua pergunta)'}: {m['content']}" for m in st.session_state.messages[id_candidato]])
+                
+                question_count = st.session_state.question_count.get(id_candidato, 0)
+                
                 prompt_ia = f"""
-                Você é um entrevistador de IA da Decision. Sua tarefa é conduzir uma entrevista concisa e eficaz.
+                Você é um entrevistador de IA da Decision. Sua tarefa é conduzir uma entrevista concisa e eficaz, fazendo UMA PERGUNTA DE CADA VEZ.
 
                 **Regras da Entrevista:**
-                1.  Faça um total de **5 a 7 perguntas-chave** para avaliar o candidato.
-                2.  Cubra os 3 pilares: técnico, cultural e de engajamento.
-                3.  **Após a última pergunta**, finalize a entrevista agradecendo o candidato e perguntando se ele tem alguma dúvida. Não faça mais perguntas depois disso.
-                4.  Seja específico e use as informações do candidato para personalizar as perguntas.
+                1.  Você está na pergunta **{question_count + 1}** de um total de 5 a 7 perguntas.
+                2.  Analise o histórico da conversa e as informações do candidato para formular a **próxima pergunta lógica e relevante**.
+                3.  **NÃO FAÇA MAIS DE UMA PERGUNTA.** Apenas a próxima.
+                4.  Se você já fez 6 ou 7 perguntas, sua próxima resposta deve ser para **finalizar a entrevista**, agradecendo o candidato e perguntando se ele tem alguma dúvida.
 
                 **Contexto da Vaga:**
                 - **Título:** {vaga_atual['titulo_vaga']}
@@ -359,12 +378,14 @@ with tab2:
                 **Histórico da Conversa até agora:**
                 {historico_formatado}
 
-                **Sua próxima ação (faça a próxima pergunta ou finalize a entrevista, seguindo as regras):**
+                **Sua próxima ação (formule a PRÓXIMA E ÚNICA pergunta ou finalize a entrevista):**
                 """
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 response = model.generate_content(prompt_ia)
                 st.session_state.messages[id_candidato].append({"role": "assistant", "content": response.text})
+                st.session_state.question_count[id_candidato] = question_count + 1
             st.rerun()
+
         codigo_vaga_atual = vaga_atual.get('codigo_vaga')
         if st.button(f"🏁 Finalizar Entrevista e Gerar Relatório para {candidato_atual['nome']}"):
             with st.spinner("Analisando entrevista e gerando relatório..."):
