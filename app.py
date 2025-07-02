@@ -338,23 +338,28 @@ with tab2:
             st.session_state.messages[id_candidato].append({"role": "user", "content": prompt})
             with st.spinner("Agente 2 está pensando..."):
                 historico_formatado = "\n".join([f"{'Recrutador' if m['role'] == 'user' else 'IA'}: {m['content']}" for m in st.session_state.messages[id_candidato]])
-                # CORREÇÃO: Adiciona o contexto do candidato ao prompt da entrevista.
+                # CORREÇÃO: Adiciona regras claras para a duração da entrevista.
                 prompt_ia = f"""
-                Você é um entrevistador de IA da Decision. Continue a entrevista abaixo.
-                Seu objetivo é avaliar o candidato nos 3 pilares: técnico, cultural e de engajamento para a vaga.
-                Faça a próxima pergunta de forma natural e específica. Não se repita.
-                Se for a primeira pergunta, use uma informação do CV do candidato para iniciar a conversa.
+                Você é um entrevistador de IA da Decision. Sua tarefa é conduzir uma entrevista concisa e eficaz.
 
-                **Vaga:** {vaga_atual['titulo_vaga']}
-                **Competências da Vaga:** {vaga_atual['perfil_vaga'].get('competencia_tecnicas_e_comportamentais')}
+                **Regras da Entrevista:**
+                1.  Faça um total de **5 a 7 perguntas-chave** para avaliar o candidato.
+                2.  Cubra os 3 pilares: técnico, cultural e de engajamento.
+                3.  **Após a última pergunta**, finalize a entrevista agradecendo o candidato e perguntando se ele tem alguma dúvida. Não faça mais perguntas depois disso.
+                4.  Seja específico e use as informações do candidato para personalizar as perguntas.
+
+                **Contexto da Vaga:**
+                - **Título:** {vaga_atual['titulo_vaga']}
+                - **Competências:** {vaga_atual['perfil_vaga'].get('competencia_tecnicas_e_comportamentais')}
                 
-                **Candidato:** {candidato_atual.get('nome')}
-                **Conhecimentos/CV do Candidato:** {candidato_atual.get('conhecimentos')} | {candidato_atual.get('cv')}
+                **Contexto do Candidato:**
+                - **Nome:** {candidato_atual.get('nome')}
+                - **Conhecimentos/CV:** {candidato_atual.get('conhecimentos')} | {candidato_atual.get('cv')}
 
-                **Histórico da Conversa:**
+                **Histórico da Conversa até agora:**
                 {historico_formatado}
 
-                **Sua próxima pergunta (direcionada e específica para o candidato):**
+                **Sua próxima ação (faça a próxima pergunta ou finalize a entrevista, seguindo as regras):**
                 """
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 response = model.generate_content(prompt_ia)
